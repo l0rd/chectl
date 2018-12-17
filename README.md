@@ -79,7 +79,7 @@ OPTIONS
   -i, --cheimage=cheimage              [default: eclipse/che-server:nightly] Che server container image
   -n, --chenamespace=chenamespace      [default: kube-che] Kubernetes namespace where Che resources will be deployed
   -o, --cheboottimeout=cheboottimeout  (required) [default: 40000] Che server bootstrap timeout (in milliseconds)
-  -t, --templates=templates            [default: /Users/mloriedo/github/chectl/templates] Path to the templates folder
+  -t, --templates=templates            [default: /Users/mariolet/Github/chectl/templates] Path to the templates folder
 ```
 
 _See code: [src/commands/server/start.ts](https://github.com/che-incubator/chectl/blob/v0.0.2/src/commands/server/start.ts)_
@@ -138,9 +138,10 @@ USAGE
   $ chectl workspace:start
 
 OPTIONS
-  -f, --devfile=devfile            (required) path to a valid devfile
-  -h, --help                       show CLI help
-  -n, --chenamespace=chenamespace  [default: kube-che] kubernetes namespace where Che server is deployed
+  -f, --devfile=devfile                  path to a valid devfile
+  -h, --help                             show CLI help
+  -n, --chenamespace=chenamespace        [default: kube-che] kubernetes namespace where Che server is deployed
+  -w, --workspaceconfig=workspaceconfig  path to a valid worksapce configuration json file
 ```
 
 _See code: [src/commands/workspace/start.ts](https://github.com/che-incubator/chectl/blob/v0.0.2/src/commands/workspace/start.ts)_
