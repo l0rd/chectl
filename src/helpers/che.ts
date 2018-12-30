@@ -118,7 +118,7 @@ export class CheHelper {
         // console.log(response.headers)
         // console.log(response.config)
         let ideURL = response.data.links.ide
-        return ideURL.replace(/\/\w*\/\w*$/g, '\/dashboard\/#\/ide$&')
+        return this.buildDashboardURL(ideURL)
       } else {
         throw new Error('E_BAD_RESP_CHE_SERVER')
       }
@@ -167,7 +167,7 @@ export class CheHelper {
         // console.log(response.headers)
         // console.log(response.config)
         let ideURL = response.data.links.ide
-        return ideURL.replace(/\/\w*\/\w*$/g, '\/dashboard\/#\/ide$&')
+        return this.buildDashboardURL(ideURL)
       } else {
         throw new Error('E_BAD_RESP_CHE_SERVER')
       }
@@ -197,5 +197,9 @@ export class CheHelper {
         throw new Error(`E_CHECTL_UNKNOWN_ERROR - Message: ${error.message}`)
       }
     }
+  }
+
+  async buildDashboardURL(ideURL: string): Promise<string> {
+    return ideURL.replace(/\/[^/|.]*\/[^/|.]*$/g, '\/dashboard\/#\/ide$&')
   }
 }
