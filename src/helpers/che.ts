@@ -116,7 +116,8 @@ export class CheHelper {
 
     await axios.interceptors.response.use(response => response, async (error: any) => {
       if (error.config && error.response && (error.response.status === 404 || error.response.status === 503)) {
-        return axios.request(error.config)
+        await axios.request(error.config)
+        return true
       }
       return Promise.reject(error)
     })
@@ -125,7 +126,25 @@ export class CheHelper {
       let url = await this.cheURL(namespace)
       await axios.get(`${url}/api/system/state`, { timeout: responseTimeoutMs })
       return true
-    } catch {
+    } catch (error) {
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        // console.log(error.response.data)
+        console.log(error.response.status)
+        console.log(error.response.message)
+        // console.log(error.response.headers)
+      } else if (error.request) {
+        // The request was made but no response was received
+        // `error.request` is an instance of XMLHttpRequest in the browser and an instance of
+        // http.ClientRequest in node.js
+        console.log('ERR_BAD_REQUEST_NO_RESPONSE')
+        console.log(error.message)
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.log('ERR_BAD_REQUEST_SETUP')
+        console.log('Error', error.message)
+      }
       return false
     }
   }
