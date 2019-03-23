@@ -33,17 +33,19 @@ export class MinikubeHelper {
         }
       },
       { title: 'Verify if minikube is running',
-        task: async (ctx: any) => {
-          ctx.isMinikubeRunning = await this.isMinikubeRunning()
-        }
-      },
-      { title: 'Start minikube',
-        skip: (ctx: any) => {
-          if (ctx.isMinikubeRunning) {
-            return 'Minikube is already running.'
+        task: async () => {
+          try {
+            const minikubeIsRunning = await this.isMinikubeRunning()
+            if (!minikubeIsRunning) {
+              command.error(`minikube is not running
+To start minikube run the following command:
+  minikube start --memory=4096 --cpus=4 --disk-size=50g
+error: E_PLATFORM_NOT_READY`)
+            }
+          } catch (e) {
+            command.error(e.message)
           }
-        },
-        task: () => this.startMinikube()
+        }
       },
       // { title: 'Verify minikube memory configuration', skip: () => 'Not implemented yet', task: () => {}},
       // { title: 'Verify kubernetes version', skip: () => 'Not implemented yet', task: () => {}},
@@ -71,26 +73,46 @@ export class MinikubeHelper {
     ])
   }
 
-  async isMinikubeRunning(): Promise<boolean> {
-    const { code } = await execa('minikube', ['status'], { timeout: 10000, reject: false })
+  async isMinikubeRunning(execTimeout = 60000): Promise<boolean> {
+    const { cmd, code, stderr, stdout, timedOut } =
+                        await execa('minikube', ['status'], { timeout: execTimeout, reject: false })
+    if (timedOut) {
+      throw new Error(`Command "${cmd}" timed out after ${execTimeout}ms
+stderr: ${stderr}
+stdout: ${stdout}
+error: E_TIMEOUT`)
+    }
     if (code === 0) { return true } else { return false }
   }
 
-  async startMinikube() {
-    await execa('minikube', ['start', '--memory=4096', '--cpus=4', '--disk-size=50g'], { timeout: 180000 })
+  async startMinikube(execTimeout = 180000) {
+    const { cmd, code, stderr, stdout, timedOut } =
+                        await execa('minikube', ['start', '--memory=4096', '--cpus=4', '--disk-size=50g'], { timeout: execTimeout, reject: false})
+    if (timedOut) {
+      throw new Error(`Command "${cmd}" timed out after ${execTimeout}ms
+stderr: ${stderr}
+stdout: ${stdout}
+error: E_TIMEOUT`)
+    }
+    if (code === 0) {
+      throw new Error(`Command "${cmd}" failed with return code ${code}
+stderr: ${stderr}
+stdout: ${stdout}
+error: E_COMMAND_FAILED`)
+    }
   }
 
   async isIngressAddonEnabled(): Promise<boolean> {
-    const { stdout } = await execa('minikube', ['addons', 'list'], { timeout: 10000 })
+    const { stdout } = await execa('minikube', ['addons', 'list'], { timeout: 60000 })
     if (stdout.includes('ingress: enabled')) { return true } else { return false }
   }
 
   async enableIngressAddon() {
-    await execa('minikube', ['addons', 'enable', 'ingress'], { timeout: 10000 })
+    await execa('minikube', ['addons', 'enable', 'ingress'], { timeout: 60000 })
   }
 
   async getMinikubeIP(): Promise<string> {
-    const { stdout } = await execa('minikube', ['ip'], { timeout: 10000 })
+    const { stdout } = await execa('minikube', ['ip'], { timeout: 60000 })
     return stdout
   }
 }

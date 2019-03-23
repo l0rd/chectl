@@ -8,15 +8,16 @@
  * SPDX-License-Identifier: EPL-2.0
  **********************************************************************/
 // tslint:disable:object-curly-spacing
+import * as execa from 'execa'
 import { expect, fancy } from 'fancy-test'
-import {MinikubeHelper} from '../../src/platforms/minikube';
-import * as execa from 'execa';
 
-jest.mock('execa');
+import {MinikubeHelper} from '../../src/platforms/minikube'
+
+jest.mock('execa')
 
 let mh = new MinikubeHelper()
 
-describe('start', () => {
+describe('Minikube helper', () => {
   fancy
     .it('verifies that minikube is running', async () => {
       (execa as any).mockResolvedValue({ code: 0, stdout: 'minikube: Running' })

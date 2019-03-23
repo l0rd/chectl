@@ -7,12 +7,13 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  **********************************************************************/
+// tslint:disable:object-curly-spacing
 import {expect, test} from '@oclif/test'
 
-describe('start', () => {
+describe('sever:start', () => {
   test
     .stdout()
-    .command(['start'])
+    .command(['server:start'])
     .it('starts Che Server', ctx => {
       expect(ctx.stdout).to.contain('Successfully started')
     })
