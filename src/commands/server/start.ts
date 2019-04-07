@@ -18,6 +18,7 @@ import * as path from 'path'
 
 import { CheHelper } from '../../api/che'
 import { KubeHelper } from '../../api/kube'
+import { OpenShiftHelper } from '../../api/openshift'
 import { HelmHelper } from '../../installers/helm'
 import { MinishiftAddonHelper } from '../../installers/minishift-addon'
 import { OperatorHelper } from '../../installers/operator'
@@ -81,8 +82,12 @@ export default class Start extends Command {
       char: 'p',
       description: 'Type of Kubernetes platform. Valid values are \"minikube\", \"minishift\".',
       default: 'minikube'
-    })
-
+    }),
+    'deployment-name': string({
+      description: 'Che deployment name',
+      default: 'che',
+      env: 'CHE_DEPLOYMENT'
+    }),
   }
 
   static getTemplatesDir(): string {
@@ -123,7 +128,14 @@ export default class Start extends Command {
     const helm = new HelmHelper()
     const che = new CheHelper()
     const operator = new OperatorHelper()
+    const kube = new KubeHelper()
+    const os = new OpenShiftHelper()
     const minishiftAddon = new MinishiftAddonHelper()
+
+    let cheDeploymentExist = false
+    let keycloakDeploymentExist = false
+    let postgresDeploymentExist = false
+    let cheIsAlreadyRunning = false
 
     // Platform Checks
     let platformCheckTasks = new Listr(undefined, {renderer: flags['listr-renderer'] as any, collapse: false})
@@ -141,6 +153,63 @@ export default class Start extends Command {
       this.error(`Platformm ${flags.platform} is not supported yet ¯\\_(ツ)_/¯`)
       this.exit()
     }
+
+    // Checks if Che is already deployed
+    let preInstallSubTasks = new Listr()
+    const preInstallTasks = new Listr([{
+      title: '👀  Looking for an already existing Che instance',
+      task: () => preInstallSubTasks
+    }], {
+      renderer: flags['listr-renderer'] as any,
+      collapse: false
+    })
+    preInstallSubTasks.add(che.installCheckTasks(flags, this))
+    preInstallSubTasks.add([
+      {
+        title: 'Scaling up Che Deployment',
+        enabled: (ctx: any) => ctx.cheDeploymentExist && ctx.isStopped,
+        task: async (ctx: any, task: any) => {
+          cheDeploymentExist = true
+          if (ctx.postgresDeploymentExist) {
+            postgresDeploymentExist = true
+            await kube.scaleDeployment('postgres', flags.chenamespace, 1)
+          }
+          if (ctx.keycloakDeploymentExist) {
+            keycloakDeploymentExist = true
+            await kube.scaleDeployment('keycloak', flags.chenamespace, 1)
+          }
+          await kube.scaleDeployment(flags['deployment-name'], flags.chenamespace, 1)
+          task.title = `${task.title}...done.`
+        }
+      },
+      {
+        title: 'Scaling up Che DeploymentConfig',
+        enabled: (ctx: any) => ctx.cheDeploymentConfigExist && ctx.isStopped,
+        task: async (ctx: any, task: any) => {
+          cheDeploymentExist = true
+          if (ctx.postgresDeploymentExist) {
+            postgresDeploymentExist = true
+            await os.scaleDeploymentConfig('postgres', flags.chenamespace, 1)
+          }
+          if (ctx.keycloakDeploymentExist) {
+            keycloakDeploymentExist = true
+            await os.scaleDeploymentConfig('keycloak', flags.chenamespace, 1)
+          }
+          await os.scaleDeploymentConfig(flags['deployment-name'], flags.chenamespace, 1)
+          task.title = `${task.title}...done.`
+        }
+      },
+      {
+        title: `Che is already running in namespace \"${flags.chenamespace}\".`,
+        enabled: (ctx: any) => ((ctx.cheDeploymentExist || ctx.cheDeploymentConfigExist) && !ctx.isStopped),
+        task: async (ctx: any, task: any) => {
+          cheDeploymentExist = true
+          cheIsAlreadyRunning = true
+          ctx.cheURL = await che.cheURL(flags.chenamespace)
+          task.title = await `${task.title}...it's URL is ${ctx.cheURL}`
+        }
+      }
+    ])
 
     // Installer
     let installerTasks = new Listr({renderer: flags['listr-renderer'] as any, collapse: false})
@@ -171,32 +240,33 @@ export default class Start extends Command {
     }
 
     // Post Install Checks
-    let cheBootstrapSubTasks = new Listr()
-    const cheStartCheckTasks = new Listr([{
-      title: '✅  Post installation checklist',
-      task: () => cheBootstrapSubTasks
+    let postInstallSubTasks = new Listr()
+    const postInstallTasks = new Listr([{
+      title: '🙈  Post installation checklist',
+      task: () => postInstallSubTasks
     }], {
       renderer: flags['listr-renderer'] as any,
       collapse: false
     })
 
-    if (flags.multiuser) {
-      cheBootstrapSubTasks.add({
-        title: 'PostgreSQL pod bootstrap',
-        task: () => this.podStartTasks('app=postgres', flags.chenamespace)
-      })
-      cheBootstrapSubTasks.add({
-        title: 'Keycloak pod bootstrap',
-        task: () => this.podStartTasks('app=keycloak', flags.chenamespace)
-      })
-    }
+    postInstallSubTasks.add({
+      enabled: () => (flags.multiuser || postgresDeploymentExist),
+      title: 'PostgreSQL pod bootstrap',
+      task: () => this.podStartTasks('app=postgres', flags.chenamespace)
+    })
 
-    cheBootstrapSubTasks.add({
+    postInstallSubTasks.add({
+      enabled: () => (flags.multiuser || keycloakDeploymentExist),
+      title: 'Keycloak pod bootstrap',
+      task: () => this.podStartTasks('app=keycloak', flags.chenamespace)
+    })
+
+    postInstallSubTasks.add({
       title: 'Che pod bootstrap',
       task: () => this.podStartTasks('app=che', flags.chenamespace)
     })
 
-    cheBootstrapSubTasks.add({
+    postInstallSubTasks.add({
       title: 'Retrieving Che Server URL',
       task: async (ctx: any, task: any) => {
         ctx.cheURL = await che.cheURL(flags.chenamespace)
@@ -204,15 +274,20 @@ export default class Start extends Command {
       }
     })
 
-    cheBootstrapSubTasks.add({
+    postInstallSubTasks.add({
       title: 'Che status check',
       task: async ctx => che.isCheServerReady(ctx.cheURL, flags.chenamespace)
     })
 
     try {
       await platformCheckTasks.run()
-      await installerTasks.run()
-      await cheStartCheckTasks.run()
+      await preInstallTasks.run()
+      if (!cheIsAlreadyRunning && !cheDeploymentExist) {
+        await installerTasks.run()
+      }
+      if (!cheIsAlreadyRunning) {
+        await postInstallTasks.run()
+      }
       this.log('Command server:start has completed successfully.')
     } catch (err) {
       this.error(err)

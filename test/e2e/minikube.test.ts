@@ -44,10 +44,25 @@ describe('e2e test', () => {
       .it('stops Server on minikube successfully')
     test
       .stdout()
+      .command(['server:start', '--listr-renderer=verbose'])
+      .exit(0)
+      .it('restarts Server on minikube successfully', ctx => {
+        expect(ctx.stdout).to.contain('Minikube preflight checklist')
+          .and.to.contain('Looking for an already existing Che instance')
+          .and.to.contain('Post installation checklist')
+      })
+    test
+      .stdout()
+      .command(['server:stop', '--listr-renderer=verbose'])
+      .exit(0)
+      .it('stops Server on minikube successfully')
+    test
+      .stdout()
       .command(['server:delete', '--listr-renderer=verbose'])
       .exit(0)
       .it('deletes Che resources on minikube successfully')
   })
+
   describe('server:start mulituser', () => {
     test
       .stdout()
@@ -64,13 +79,30 @@ describe('e2e test', () => {
       .stdout()
       .command(['server:stop', '--listr-renderer=verbose'])
       /*
-      TODO: set CHE_ACCESS_TOKEN with auth:che-api-token that does something similar to
+      TODO: set template parameter CHE_KEYCLOAK_ADMIN_REQUIRE_UPDATE_PASSWORD to false https://github.com/eclipse/che/blob/master/deploy/openshift/templates/multi/keycloak-template.yaml#L175
+      TODO: set CHE_ACCESS_TOKEN with auth:token that does something similar to
         CHE_USER=admin
         CHE_PASSWORD=admin
-        TOKEN_ENDPOINT="http://keycloak-che.192.168.64.68.nip.io/auth/realms/che/protocol/openid-connect/token"
+        TOKEN_ENDPOINT="http://keycloak-che.192.168.9.101.nip.io/auth/realms/che/protocol/openid-connect/token"
         export CHE_ACCESS_TOKEN=$(curl -sSL --data "grant_type=password&client_id=che-public&username=${CHE_USER}&password=${CHE_PASSWORD}" \
             ${TOKEN_ENDPOINT} | jq -r .access_token)
       */
+      .exit(0)
+      .it('stops Server on minikube successfully')
+    test
+      .skip()
+      .stdout()
+      .command(['server:start', '--listr-renderer=verbose'])
+      .exit(0)
+      .it('restarts Server on minikube successfully', ctx => {
+        expect(ctx.stdout).to.contain('Minikube preflight checklist')
+          .and.to.contain('Looking for an already existing Che instance')
+          .and.to.contain('Post installation checklist')
+      })
+    test
+      .skip()
+      .stdout()
+      .command(['server:stop', '--listr-renderer=verbose'])
       .exit(0)
       .it('stops Server on minikube successfully')
     test

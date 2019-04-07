@@ -11,9 +11,11 @@
 // tslint:disable-next-line:no-http-string
 
 import { Core_v1Api, KubeConfig } from '@kubernetes/client-node'
+import { Command } from '@oclif/command'
 import axios from 'axios'
 import { cli } from 'cli-ux'
 import * as fs from 'fs'
+import * as Listr from 'listr'
 
 import { KubeHelper } from '../api/kube'
 import { OpenShiftHelper } from '../api/openshift'
@@ -259,8 +261,95 @@ export class CheHelper {
     return true
   }
 
+  async getAuthenticationTokenEnpoint(cheURL: string, responseTimeoutMs = this.defaultCheResponseTimeoutMs): Promise<string> {
+    const endpoint = `${cheURL}/api/keycloak/settings`
+    let response = null
+    try {
+      response = await axios.get(endpoint, { timeout: responseTimeoutMs })
+    } catch (error) {
+      throw this.getCheApiError(error, endpoint)
+    }
+    if (!response || response.status !== 200 || !response.data) {
+      throw new Error('E_BAD_RESP_CHE_API')
+    }
+    return response.data['che.keycloak.token.endpoint']
+  }
+
   async buildDashboardURL(ideURL: string): Promise<string> {
     return ideURL.replace(/\/[^/|.]*\/[^/|.]*$/g, '\/dashboard\/#\/ide$&')
+  }
+
+  installCheckTasks(flags: any, command: Command): Array<Listr.ListrTask> {
+    const kube = new KubeHelper()
+    const openshift = new OpenShiftHelper()
+    const keycloakDeploymentName = 'keycloak'
+    const postgresDeploymentName = 'postgres'
+    const cheSelector = 'app=che'
+    return [
+      {
+        title: `Verify if deployment \"${flags['deployment-name']}\" exist in namespace \"${flags.chenamespace}\"`,
+        task: async (ctx: any, task: any) => {
+          if (ctx.isOpenShift && await openshift.deploymentConfigExist(flags['deployment-name'], flags.chenamespace)) {
+            // minishift addon and the openshift templates use a deployment config
+            ctx.cheDeploymentConfigExist = true
+            ctx.keycloakDeploymentExist = await openshift.deploymentConfigExist(keycloakDeploymentName, flags.chenamespace)
+            ctx.postgresDeploymentExist = await openshift.deploymentConfigExist(postgresDeploymentName, flags.chenamespace)
+            if (ctx.keycloakDeploymentExist && ctx.postgresDeploymentExist) {
+              task.title = await `${task.title}...the dc "${flags['deployment-name']}" exists (as well as keycloak and postgres)`
+            } else {
+              task.title = await `${task.title}...the dc "${flags['deployment-name']}" exists`
+            }
+          } else if (await kube.deploymentExist(flags['deployment-name'], flags.chenamespace)) {
+            // helm chart and Che operator use a deployment
+            ctx.cheDeploymentExist = true
+            ctx.keycloakDeploymentExist = await kube.deploymentExist(keycloakDeploymentName, flags.chenamespace)
+            ctx.postgresDeploymentExist = await kube.deploymentExist(postgresDeploymentName, flags.chenamespace)
+            if (ctx.keycloakDeploymentExist && ctx.postgresDeploymentExist) {
+              task.title = await `${task.title}...it does (as well as keycloak and postgres)`
+            } else {
+              task.title = await `${task.title}...it does`
+            }
+          } else {
+            task.title = await `${task.title}...it doesn't`
+          }
+        }
+      },
+      {
+        title: `Verify if Che server pod is running (selector "${cheSelector}")`,
+        enabled: (ctx: any) => (ctx.cheDeploymentExist || ctx.cheDeploymentConfigExist),
+        task: async (ctx: any, task: any) => {
+          const cheServerPodExist = await kube.podsExistBySelector(cheSelector as string, flags.chenamespace)
+          if (!cheServerPodExist) {
+            task.title = `${task.title}...It doesn't`
+            ctx.isStopped = true
+          } else {
+            const cheServerPodReadyStatus = await kube.getPodReadyConditionStatus(cheSelector as string, flags.chenamespace)
+            if (cheServerPodReadyStatus !== 'True') {
+              task.title = `${task.title}...It doesn't`
+              ctx.isNotReadyYet = true
+            } else {
+              task.title = `${task.title}...it does.`
+            }
+          }
+        }
+      },
+      {
+        title: 'Check Che server status',
+        enabled: (ctx: any) => (ctx.cheDeploymentExist || ctx.cheDeploymentConfigExist) && (!ctx.isStopped && !ctx.isNotReadyYet),
+        task: async (ctx: any, task: any) => {
+          let cheURL = ''
+          try {
+            cheURL = await this.cheURL(flags.chenamespace)
+            const status = await this.getCheServerStatus(cheURL)
+            ctx.isAuthEnabled = await this.isAuthenticationEnabled(cheURL)
+            const auth = ctx.isAuthEnabled ? '(auth enabled)' : '(auth disabled)'
+            task.title = await `${task.title}...${status} ${auth}`
+          } catch (error) {
+            command.error(`E_CHECK_CHE_STATUS_FAIL - Failed to check Che status (URL: ${cheURL}). ${error.message}`)
+          }
+        }
+      }
+    ]
   }
 
   private getCheApiError(error: any, endpoint: string): Error {

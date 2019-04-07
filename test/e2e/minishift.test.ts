@@ -63,6 +63,7 @@ describe('e2e test', () => {
       .skip()
       .stdout()
       /*
+      TODO: set template parameter CHE_KEYCLOAK_ADMIN_REQUIRE_UPDATE_PASSWORD to false https://github.com/eclipse/che/blob/master/deploy/openshift/templates/multi/keycloak-template.yaml#L175
       TODO: set CHE_ACCESS_TOKEN with auth:che-api-token that does something similar to
         CHE_USER=admin && \
         CHE_PASSWORD=admin && \

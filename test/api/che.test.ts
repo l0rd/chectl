@@ -200,4 +200,16 @@ describe('Che helper', () => {
         expect(authEnabled).to.equal(false)
       })
   })
+  describe('getAuthenticationTokenEnpoint', () => {
+    fancy
+      .nock(cheURL, api => api
+        .get('/api/keycloak/settings')
+        .replyWithFile(200, __dirname + '/replies/get-keycloak-settings.json', {
+          'Content-Type': 'application/json'
+        }))
+      .it('should return an URL', async () => {
+        const tokenEndpoint = await ch.getAuthenticationTokenEnpoint(cheURL)
+        expect(tokenEndpoint).to.contain('https://')
+      })
+  })
 })
